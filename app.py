@@ -14,44 +14,67 @@ c.execute('''CREATE TABLE IF NOT EXISTS tasks (
                 )''')
 conn.commit()
 
-# Streamlit App
+# Streamlit App Styling
+st.set_page_config(page_title="Task Manager", page_icon="✅", layout="wide")
 st.title("📋 Task Manager")
+st.markdown("---")
 
-# Task Input
-task = st.text_input("Task")
-date = st.date_input("Date", datetime.today())
-status = st.selectbox("Status", ["Pending", "Fulfilled", "Partially Fulfilled"])
-notes = st.text_area("Notes")
+# Task Input Form with Sidebar
+st.sidebar.header("Add New Task")
+task = st.sidebar.text_input("Task")
+date = st.sidebar.date_input("Date", datetime.today())
+status = st.sidebar.selectbox("Status", ["Pending", "Fulfilled", "Partially Fulfilled"])
+notes = st.sidebar.text_area("Notes")
 
-if st.button("Add Task"):
+if st.sidebar.button("Add Task", use_container_width=True):
     c.execute("INSERT INTO tasks (task, date, status, notes) VALUES (?, ?, ?, ?)", 
               (task, date.strftime('%Y-%m-%d'), status, notes))
     conn.commit()
-    st.success("Task Added!")
+    st.sidebar.success("✅ Task Added!")
+    st.experimental_rerun()
 
-# Display Tasks
-st.subheader("📌 Tasks List")
+# Filtering Options
+st.subheader("📌 View Tasks")
+filter_status = st.radio("Filter by Status:", ["All", "Pending", "Fulfilled", "Partially Fulfilled"], horizontal=True)
 
-c.execute("SELECT * FROM tasks ORDER BY date DESC")
+# Fetch Tasks
+query = "SELECT * FROM tasks"
+if filter_status != "All":
+    query += f" WHERE status = '{filter_status}'"
+query += " ORDER BY date DESC"
+c.execute(query)
 tasks = c.fetchall()
 
-for task in tasks:
-    st.write(f"📝 **{task[1]}** | 📅 {task[2]} | ✅ {task[3]}")
-    st.text_area(f"Notes ({task[1]})", task[4], key=task[0])
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button(f"Update {task[0]}", key=f"update_{task[0]}"):
-            new_status = st.selectbox(f"Update Status ({task[0]})", ["Pending", "Fulfilled", "Partially Fulfilled"])
-            new_notes = st.text_area(f"Update Notes ({task[0]})", task[4])
-            c.execute("UPDATE tasks SET status=?, notes=? WHERE id=?", (new_status, new_notes, task[0]))
-            conn.commit()
-            st.success("Task Updated!")
-
-    with col2:
-        if st.button(f"Delete {task[0]}", key=f"delete_{task[0]}"):
-            c.execute("DELETE FROM tasks WHERE id=?", (task[0],))
-            conn.commit()
-            st.warning("Task Deleted!")
+# Display Tasks Date-wise
+if tasks:
+    grouped_tasks = {}
+    for task in tasks:
+        task_date = task[2]
+        if task_date not in grouped_tasks:
+            grouped_tasks[task_date] = []
+        grouped_tasks[task_date].append(task)
+    
+    for date, date_tasks in grouped_tasks.items():
+        st.markdown(f"### 📅 {date}")
+        for task in date_tasks:
+            with st.expander(f"📝 {task[1]} | ✅ {task[3]}"):
+                st.write(f"**Notes:** {task[4]}")
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col1:
+                    new_status = st.selectbox(f"Update Status ({task[0]})", ["Pending", "Fulfilled", "Partially Fulfilled"], index=["Pending", "Fulfilled", "Partially Fulfilled"].index(task[3]))
+                with col2:
+                    new_notes = st.text_area(f"Update Notes ({task[0]})", task[4], key=f"notes_{task[0]}")
+                with col3:
+                    if st.button(f"Update {task[0]}", key=f"update_{task[0]}"):
+                        c.execute("UPDATE tasks SET status=?, notes=? WHERE id=?", (new_status, new_notes, task[0]))
+                        conn.commit()
+                        st.experimental_rerun()
+                if st.button(f"❌ Delete Task {task[0]}", key=f"delete_{task[0]}", use_container_width=True):
+                    c.execute("DELETE FROM tasks WHERE id=?", (task[0],))
+                    conn.commit()
+                    st.experimental_rerun()
+        st.markdown("---")
+else:
+    st.info("No tasks found for the selected filter.")
 
 conn.close()
